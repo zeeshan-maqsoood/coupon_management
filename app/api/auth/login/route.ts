@@ -1,5 +1,21 @@
 import { NextResponse } from 'next/server';
 import { sign } from 'jsonwebtoken';
+import { hash } from 'bcryptjs';
+import mongoose from 'mongoose';
+import dbConnect from '@/lib/mongodb';
+
+// Define User model inline to avoid module resolution issues
+const userSchema = new mongoose.Schema({
+  _id: { type: mongoose.Schema.Types.ObjectId, required: true },
+  email: { type: String, required: true, unique: true },
+  username: { type: String, required: true },
+  password: { type: String, required: true },
+  role: { type: String, default: 'user' },
+  permissions: { type: [String], default: [] },
+}, { timestamps: true });
+
+// Create model if it doesn't exist
+const User = mongoose.models.User || mongoose.model('User', userSchema);
 
 export const dynamic = 'force-dynamic';
 
@@ -22,25 +38,85 @@ export async function POST(request: Request) {
       );
     }
 
-    // In a real app, you would validate credentials against a database
-    // For this example, we'll use a hardcoded admin user
-    const validCredentials = email === 'admin@example.com' && password === 'admin123';
+    await dbConnect();
     
-    if (!validCredentials) {
+    // Check if admin user exists, if not create one
+    const ADMIN_EMAIL = 'admin@example.com';
+    const ADMIN_PASSWORD = 'admin123';
+    
+    // First, try to find the admin user with password explicitly selected
+    let adminUser = await User.findOne({ email: ADMIN_EMAIL }).select('+password').lean();
+    
+    if (!adminUser) {
+      console.log('Admin user not found, creating new one...');
+      try {
+        const hashedPassword = await hash(ADMIN_PASSWORD, 10);
+        adminUser = await User.create({
+          _id: new mongoose.Types.ObjectId('000000000000000000000001'),
+          email: ADMIN_EMAIL,
+          username: 'admin',
+          password: hashedPassword,
+          role: 'admin',
+          permissions: ['admin:all'],
+          status: 'active'
+        });
+        console.log('Created new admin user');
+      } catch (error) {
+        console.error('Error creating admin user:', error);
+        return NextResponse.json(
+          { success: false, error: 'Failed to create admin user' },
+          { status: 500 }
+        );
+      }
+    }
+    
+    // Verify password
+    console.log('Verifying password...');
+    if (!adminUser.password) {
+      console.error('No password set for admin user');
+      return NextResponse.json(
+        { success: false, error: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
+    
+    let validPassword = false;
+    try {
+      console.log('Comparing passwords...');
+      const bcrypt = await import('bcryptjs');
+      validPassword = await bcrypt.compare(password, adminUser.password);
+      console.log('Password comparison result:', validPassword);
+    } catch (error) {
+      console.error('Error comparing passwords:', error);
+      return NextResponse.json(
+        { success: false, error: 'Error validating credentials' },
+        { status: 500 }
+      );
+    }
+    
+    if (email !== ADMIN_EMAIL || !validPassword) {
       return NextResponse.json(
         { success: false, error: 'Invalid email or password' },
         { status: 401 }
       );
     }
 
-    // User data to include in the token
+    // Create a clean user object without the password
     const userData = {
-      id: '1',
-      email: email,
-      username: 'admin',
-      role: 'admin',
-      permissions: ['admin:all']
+      id: adminUser._id.toString(),
+      email: adminUser.email,
+      username: adminUser.username,
+      role: adminUser.role,
+      permissions: adminUser.permissions || []
     };
+    
+    console.log('User authenticated successfully:', { 
+      id: userData.id,
+      email: userData.email,
+      role: userData.role 
+    });
+    
+    console.log('Generated user data for token:', userData);
 
     // Generate JWT token
     const token = sign(userData, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });

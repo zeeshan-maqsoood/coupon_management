@@ -56,54 +56,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // Important for cookies
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(credentials),
       });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Login failed');
-      }
-      
+
       const data = await response.json();
-      console.log('Login response data:', data);
-      
-      if (data.success && data.data?.user) {
+
+      if (response.ok && data.success) {
+        localStorage.setItem('token', data.data.token);
         setUser(data.data.user);
-        
-        // Store token in localStorage if available in response
-        if (data.data.token) {
-          localStorage.setItem('token', data.data.token);
-          console.log('Token stored in localStorage');
-        } else {
-          console.log('No token in response, checking cookies...');
-        }
-        
-        router.push('/admin');
         return true;
-      } else {
-        throw new Error(data.error || 'Invalid response from server');
       }
+      return false;
     } catch (error) {
       console.error('Login failed:', error);
-      throw error;
+      return false;
     }
   };
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/logout', { 
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      setUser(null);
-      localStorage.removeItem('token');
-      router.push('/login');
+      await fetch('/api/auth/logout');
     } catch (error) {
       console.error('Logout failed:', error);
+    } finally {
+      localStorage.removeItem('token');
+      setUser(null);
+      router.push('/login');
     }
   };
 

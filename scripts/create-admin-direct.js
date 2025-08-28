@@ -1,6 +1,17 @@
-require('dotenv').config();
+require('dotenv').config({ path: '.env.local' });
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+
+// Ensure required environment variables are set
+if (!process.env.MONGODB_URI) {
+  console.error('Error: MONGODB_URI is not defined in .env.local');
+  process.exit(1);
+}
+
+if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
+  console.error('Error: ADMIN_EMAIL and ADMIN_PASSWORD must be set in .env.local');
+  process.exit(1);
+}
 
 // Define the User schema inline to avoid module resolution issues
 const userSchema = new mongoose.Schema({
@@ -26,9 +37,8 @@ const userSchema = new mongoose.Schema({
 async function createAdminUser() {
   try {
     // Connect to MongoDB
-    const mongoUri = 'mongodb://127.0.0.1:27017/coupon-admin';
-    console.log('Connecting to MongoDB at:', mongoUri);
-    await mongoose.connect(mongoUri, {
+    console.log('Connecting to MongoDB...');
+    await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
@@ -37,10 +47,11 @@ async function createAdminUser() {
     const User = mongoose.model('User', userSchema);
     
     // Check if admin already exists
+    const adminEmail = process.env.ADMIN_EMAIL;
     const existingAdmin = await User.findOne({
       $or: [
         { username: 'admin' },
-        { email: 'admin@example.com' }
+        { email: adminEmail }
       ]
     });
 
@@ -52,30 +63,28 @@ async function createAdminUser() {
 
     // Hash password
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash('admin123', salt);
+    const hashedPassword = await bcrypt.hash(process.env.ADMIN_PASSWORD, salt);
 
     // Define all possible permissions
     const allPermissions = [
       'USER_VIEW', 'USER_CREATE', 'USER_EDIT', 'USER_DELETE',
-      'COUPON_VIEW', 'COUPON_CREATE', 'COUPON_EDIT', 'COUPON_DELETE',
-      'STORE_VIEW', 'STORE_CREATE', 'STORE_EDIT', 'STORE_DELETE',
-      'CATEGORY_VIEW', 'CATEGORY_CREATE', 'CATEGORY_EDIT', 'CATEGORY_DELETE'
     ];
 
     // Create admin user
-    const admin = new User({
+    const adminUser = new User({
       username: 'admin',
-      email: 'admin@example.com',
+      email: process.env.ADMIN_EMAIL,
       password: hashedPassword,
       role: 'admin',
-      permissions: allPermissions,
+      permissions: ['admin:all'],
       status: 'active'
     });
 
-    await admin.save();
+    await adminUser.save();
     console.log('Admin user created successfully!');
     console.log('Username: admin');
-    console.log('Password: admin123');
+    console.log('Email: ' + process.env.ADMIN_EMAIL);
+    console.log('Password: [the password you set in .env.local]');
     console.log('Please change the password after first login.');
     
   } catch (error) {
