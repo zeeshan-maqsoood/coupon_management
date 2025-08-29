@@ -1,7 +1,7 @@
 "use client"
 
-import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { ImagePlus, UploadCloud, X } from "lucide-react"
-import { CouponSection } from "./coupon-section"
+
+// Dynamically import CouponSection to ensure it's only loaded on the client
+const CouponSection = dynamic(() => import('./coupon-section'), { ssr: false });
 
 interface ImageData {
   url: string;
@@ -75,7 +77,7 @@ const COUNTRIES = [
   "Mexico",
 ]
 
-const StoreForm = ({ store, onSuccess, onCancel }: StoreFormProps) => {
+export default function StoreForm({ store, onSuccess, onCancel }: StoreFormProps) {
   console.log(store, "store")
   const { toast } = useToast()
   const [loading, setLoading] = useState(false);
@@ -87,7 +89,7 @@ const StoreForm = ({ store, onSuccess, onCancel }: StoreFormProps) => {
   const [categories, setCategories] = useState([])
   const [subcategories, setSubcategories] = useState([])
   const [filteredSubcategories, setFilteredSubcategories] = useState([])
-  const [networks, setNetworks] = useState<Array<{_id: string, name: string}>>([])
+  const [networks, setNetworks] = useState<Array<{_id: string, name: string}> | null>(null)
 
   // Initialize form data with default values
   const [formData, setFormData] = useState<FormData>({
@@ -218,27 +220,72 @@ const StoreForm = ({ store, onSuccess, onCancel }: StoreFormProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const thumbnailInputRef = useRef<HTMLInputElement>(null)
 
-  // Fetch data on component mount
+  // Track if component is mounted
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Set mounted state on client-side only
   useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Fetch data on component mount (client-side only)
+  useEffect(() => {
+    // Only run on client-side after mount
     const loadData = async () => {
       try {
+        setLoading(true);
+        
+        // Only run on client-side
+        if (typeof window === 'undefined') return;
+        
         // Fetch categories and networks in parallel
-        await Promise.all([
-          fetchCategories(),
-          fetchNetworks()
+        const token = localStorage.getItem('token');
+        if (!token) {
+          console.error('No authentication token found');
+          return;
+        }
+        
+        const [categoriesRes, networksRes] = await Promise.all([
+          fetch('/api/categories'),
+          fetch('/api/networks', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          })
         ]);
         
-        if (store?.primaryCategory) {
-          console.log('Loading subcategories for primary category:', store.primaryCategory)
-          await fetchSubcategories(store.primaryCategory)
+        if (!categoriesRes.ok || !networksRes.ok) {
+          throw new Error('Failed to fetch data');
+        }
+        
+        const [categoriesData, networksData] = await Promise.all([
+          categoriesRes.json(),
+          networksRes.json()
+        ]);
+        
+        // Ensure we have valid arrays
+        setCategories(Array.isArray(categoriesData) ? categoriesData : []);
+        setNetworks(Array.isArray(networksData) ? networksData : []);
+        
+        // If editing a store, load its data after categories and networks are loaded
+        if (store?._id) {
+          await loadStoreData(store._id);
         }
       } catch (error) {
         console.error('Error loading data:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load required data',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoading(false);
       }
     };
     
     loadData();
-  }, [])
+  }, [isMounted]);
 
   // Handle subcategory selection when subcategories are loaded or change
   useEffect(() => {
@@ -293,17 +340,122 @@ const StoreForm = ({ store, onSuccess, onCancel }: StoreFormProps) => {
     }
   }
 
+  const loadStoreData = async (storeId: string) => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (!token) throw new Error('No authentication token found');
+      
+      const response = await fetch(`/api/stores/${storeId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Try to refresh token and retry
+          const refreshResponse = await fetch('/api/auth/refresh', {
+            method: 'POST',
+            credentials: 'include'
+          });
+          
+          if (refreshResponse.ok) {
+            const refreshData = await refreshResponse.json();
+            if (refreshData.success) {
+              localStorage.setItem('token', refreshData.data.accessToken);
+              const retryResponse = await fetch(`/api/stores/${storeId}`, {
+                headers: {
+                  'Authorization': `Bearer ${refreshData.data.accessToken}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              
+              if (retryResponse.ok) {
+                const storeData = await retryResponse.json();
+                return storeData;
+              }
+            }
+          }
+          throw new Error('Session expired. Please log in again.');
+        }
+        throw new Error(`Failed to load store data: ${response.status} ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error loading store data:', error);
+      throw error;
+    }
+  };
+
   const fetchNetworks = async () => {
     try {
       console.log('Fetching networks from API...');
-      const response = await fetch('/api/networks');
-      if (!response.ok) {
-        throw new Error(`Failed to fetch networks: ${response.status} ${response.statusText}`);
+      // Skip if we're on the server
+      if (typeof window === 'undefined') return null;
+      
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('No authentication token found');
+        setNetworks([]);
+        return [];
       }
+      
+      const response = await fetch('/api/networks', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Token might be expired, try to refresh it
+          try {
+            const refreshResponse = await fetch('/api/auth/refresh', {
+              method: 'POST',
+              credentials: 'include'
+            });
+            
+            if (refreshResponse.ok) {
+              const refreshData = await refreshResponse.json();
+              if (refreshData.success) {
+                localStorage.setItem('token', refreshData.data.accessToken);
+                // Retry the original request with the new token
+                const retryResponse = await fetch('/api/networks', {
+                  headers: {
+                    'Authorization': `Bearer ${refreshData.data.accessToken}`,
+                    'Content-Type': 'application/json'
+                  }
+                });
+                
+                if (retryResponse.ok) {
+                  const data = await retryResponse.json();
+                  const networksData = Array.isArray(data) ? data : [];
+                  setNetworks(networksData);
+                  return networksData;
+                }
+              }
+            }
+          } catch (error) {
+            console.error('Error refreshing token:', error);
+          }
+          // If we get here, refresh failed
+          console.error('Session expired. Please log in again.');
+          setNetworks([]);
+          return [];
+        }
+        console.error(`Failed to fetch networks: ${response.status} ${response.statusText}`);
+        setNetworks([]);
+        return [];
+      }
+      
       const data = await response.json();
-      console.log('Networks API response:', data);
-      setNetworks(data);
-      return data; // Return the networks data
+      const networksData = Array.isArray(data) ? data : [];
+      console.log('Networks API response:', networksData);
+      setNetworks(networksData);
+      return networksData; // Return the networks data
     } catch (error) {
       console.error('Error fetching networks:', error);
       setErrors(prev => ({ ...prev, network: 'Failed to load networks' }));
@@ -693,20 +845,6 @@ const StoreForm = ({ store, onSuccess, onCancel }: StoreFormProps) => {
                     </div>
                     <Select
                       value={formData.network}
-                      onValueChange={(value) => {
-                        console.log('Network selected:', value);
-                        setFormData(prev => ({ ...prev, network: value }));
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={networks.length > 0 ? "Select a network" : "Loading networks..."}>
-                          {networks.find(n => n._id === formData.network || n.name === formData.network)?.name || ''}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {networks.map((network) => (
-                          <SelectItem key={network._id} value={network._id}>
-                            {network.name}
                           </SelectItem>
                         ))}
                       </SelectContent>

@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 import { Pencil, Trash2, Plus, Search, ExternalLink } from "lucide-react"
-import { StoreForm } from "./store-form"
+import StoreForm from "./store-form"
 
 export default function StoresList() {
   const { toast } = useToast()
