@@ -6,8 +6,8 @@ import Category from "@/models/Category"
 import Coupon from "@/models/Coupon"
 import { verifyAccessToken } from "@/lib/jwt"
 
-// Revalidate every 5 minutes
-export const revalidate = 300
+// This route needs to be dynamic because it uses request headers
+export const dynamic = 'force-dynamic' // Force dynamic (server) route instead of static prerendering
 
 export async function GET(request: Request) {
   try {
