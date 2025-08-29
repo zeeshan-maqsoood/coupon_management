@@ -11,8 +11,32 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { ImagePlus, UploadCloud, X } from "lucide-react"
 
+// Define the Coupon type and props interface
+interface Coupon {
+  _id?: string;
+  couponTitle: string;
+  couponCode: string;
+  trackingLink: string;
+  couponDescription: string;
+  expiryDate: Date | null;
+  codeType: 'percentage' | 'fixed' | 'freeShipping' | 'bogo';
+  status: 'active' | 'inactive' | 'expired';
+  discountPercentage?: number;
+}
+
+interface CouponSectionProps {
+  value: Coupon[];
+  onChange: (coupons: Coupon[]) => void;
+}
+
 // Dynamically import CouponSection to ensure it's only loaded on the client
-const CouponSection = dynamic(() => import('./coupon-section'), { ssr: false });
+const CouponSection = dynamic<CouponSectionProps>(
+  () => import('./coupon-section').then(mod => mod.CouponSection as React.ComponentType<CouponSectionProps>),
+  { 
+    ssr: false,
+    loading: () => <div>Loading coupons...</div>
+  }
+);
 
 interface ImageData {
   url: string;
@@ -86,10 +110,16 @@ export default function StoreForm({ store, onSuccess, onCancel }: StoreFormProps
   
   const [logoUrl, setLogoUrl] = useState<string>("");
   const [thumbnailUrl, setThumbnailUrl] = useState<string>("");
-  const [categories, setCategories] = useState([])
-  const [subcategories, setSubcategories] = useState([])
-  const [filteredSubcategories, setFilteredSubcategories] = useState([])
-  const [networks, setNetworks] = useState<Array<{_id: string, name: string}> | null>(null)
+  interface Category {
+    _id: string;
+    name: string;
+    subcategories?: Array<{_id: string, name: string}>;
+  }
+
+  const [categories, setCategories] = useState<Category[]>([])
+  const [subcategories, setSubcategories] = useState<Array<{_id: string, name: string}>>([])
+  const [filteredSubcategories, setFilteredSubcategories] = useState<Array<{_id: string, name: string}>>([])
+  const [networks, setNetworks] = useState<Array<{_id: string, name: string}>>([])
 
   // Initialize form data with default values
   const [formData, setFormData] = useState<FormData>({
@@ -151,7 +181,7 @@ export default function StoreForm({ store, onSuccess, onCancel }: StoreFormProps
           console.log('Original network value:', store.network);
           
           // Ensure we have the latest networks data
-          const currentNetworks = networks;
+          const currentNetworks = networks || [];
           console.log('Available networks:', currentNetworks);
           
           if (typeof store.network === 'object' && store.network !== null) {
@@ -259,14 +289,30 @@ export default function StoreForm({ store, onSuccess, onCancel }: StoreFormProps
           throw new Error('Failed to fetch data');
         }
         
-        const [categoriesData, networksData] = await Promise.all([
-          categoriesRes.json(),
-          networksRes.json()
-        ]);
+        // Parse the JSON responses
+        const categoriesResponse = await categoriesRes.json();
+        const networksResponse = await networksRes.json();
+        
+        console.log('Categories API response:', categoriesResponse);
+        console.log('Networks API response:', networksResponse);
+        
+        // Extract data from responses
+        const categoriesData = categoriesResponse.success ? categoriesResponse.data : [];
+        const networksData = networksResponse.success ? networksResponse.data : [];
+        
+        console.log('Extracted categories:', categoriesData);
+        console.log('Extracted networks:', networksData);
         
         // Ensure we have valid arrays
-        setCategories(Array.isArray(categoriesData) ? categoriesData : []);
-        setNetworks(Array.isArray(networksData) ? networksData : []);
+        const categoriesList = Array.isArray(categoriesData) ? categoriesData : [];
+        const networksList = Array.isArray(networksData) ? networksData : [];
+        
+        console.log('Processed categories:', categoriesList);
+        console.log('Processed networks:', networksList);
+        
+        // Update state with the fetched data
+        setCategories(categoriesList);
+        setNetworks(networksList);
         
         // If editing a store, load its data after categories and networks are loaded
         if (store?._id) {
@@ -274,11 +320,11 @@ export default function StoreForm({ store, onSuccess, onCancel }: StoreFormProps
         }
       } catch (error) {
         console.error('Error loading data:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load required data',
-          variant: 'destructive',
-        });
+        // toast({
+        //   title: 'Error',
+        //   description: 'Failed to load required data',
+        //   variant: 'destructive',
+        // });
       } finally {
         setLoading(false);
       }
@@ -471,31 +517,36 @@ export default function StoreForm({ store, onSuccess, onCancel }: StoreFormProps
   const fetchSubcategories = async (categoryId: string) => {
     try {
       if (!categoryId) {
-        setSubcategories([])
-        setFilteredSubcategories([])
-        return []
+        setSubcategories([]);
+        setFilteredSubcategories([]);
+        return [];
       }
 
-      console.log(`Fetching subcategories for category: ${categoryId}`)
-      const response = await fetch(`/api/subcategories?categoryId=${categoryId}`)
-      const result = await response.json()
-
-      if (result.success) {
-        const activeSubcategories = Array.isArray(result.data)
-          ? result.data.filter((subcat: any) => subcat?.status === "active")
-          : []
-
-        console.log("Fetched active subcategories:", activeSubcategories)
-
-        // Update both subcategories states
-        setSubcategories(activeSubcategories)
-        setFilteredSubcategories(activeSubcategories)
-
-        return activeSubcategories
-      } else {
-        console.error("Failed to fetch subcategories:", result.error)
-        return []
+      console.log(`Fetching subcategories for category: ${categoryId}`);
+      const response = await fetch(`/api/subcategories?categoryId=${categoryId}`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch subcategories: ${response.statusText}`);
       }
+      
+      const result = await response.json();
+      console.log("Subcategories API response:", result);
+
+      // Extract subcategories from the response
+      const subcategoriesData = result.success && Array.isArray(result.data) ? result.data : [];
+      
+      // Filter for active subcategories if needed
+      const activeSubcategories = subcategoriesData.filter(
+        (subcat: any) => subcat?.status === "active" || subcat?.status === undefined
+      );
+
+      console.log("Fetched active subcategories:", activeSubcategories);
+
+      // Update both subcategories states
+      setSubcategories(activeSubcategories);
+      setFilteredSubcategories(activeSubcategories);
+
+      return activeSubcategories;
     } catch (error) {
       console.error("Failed to fetch subcategories:", error)
       return []
@@ -845,6 +896,15 @@ export default function StoreForm({ store, onSuccess, onCancel }: StoreFormProps
                     </div>
                     <Select
                       value={formData.network}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, network: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={networks.length > 0 ? "Select a network" : "Loading networks..."} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {networks.map((network) => (
+                          <SelectItem key={network._id} value={network._id}>
+                            {network.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -916,15 +976,15 @@ export default function StoreForm({ store, onSuccess, onCancel }: StoreFormProps
                   >
                     <SelectTrigger>
                       <SelectValue placeholder={categories.length > 0 ? "Select a category" : "Loading categories..."}>
-                        {categories.find((c: any) => c._id === formData.primaryCategory)?.name || "Select a category"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((category: any) => (
-                        <SelectItem key={category._id} value={category._id}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
+                      {categories.find((c) => c._id === formData.primaryCategory)?.name || "Select a category"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category._id} value={category._id}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -945,11 +1005,11 @@ export default function StoreForm({ store, onSuccess, onCancel }: StoreFormProps
                               : "Select a subcategory"
                         }
                       >
-                        {filteredSubcategories.find((s: any) => s._id === formData.subCategory)?.name || ""}
+                        {filteredSubcategories.find((s) => s._id === formData.subCategory)?.name || ""}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {filteredSubcategories.map((subcategory: any) => (
+                      {filteredSubcategories.map((subcategory) => (
                         <SelectItem key={subcategory._id} value={subcategory._id}>
                           {subcategory.name}
                         </SelectItem>
