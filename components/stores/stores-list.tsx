@@ -10,6 +10,13 @@ import { useToast } from "@/hooks/use-toast"
 import { Pencil, Trash2, Plus, Search, ExternalLink } from "lucide-react"
 import StoreForm from "./store-form"
 
+type Network = {
+  _id: string;
+  name: string;
+  slug: string;
+  status: string;
+};
+
 export default function StoresList() {
   const { toast } = useToast()
   const [stores, setStores] = useState([])
@@ -17,6 +24,7 @@ export default function StoresList() {
   const [searchTerm, setSearchTerm] = useState("")
   const [showForm, setShowForm] = useState(false)
   const [editingStore, setEditingStore] = useState(null)
+  const [networks, setNetworks] = useState<Record<string, Network>>({})
 
   const fetchStores = async () => {
     try {
@@ -38,7 +46,24 @@ export default function StoresList() {
 
   useEffect(() => {
     fetchStores()
+    fetchNetworks()
   }, [])
+
+  const fetchNetworks = async () => {
+    try {
+      const response = await fetch('/api/networks')
+      const result = await response.json()
+      if (result.success) {
+        const networksMap = result.data.reduce((acc: Record<string, Network>, network: Network) => {
+          acc[network._id] = network;
+          return acc;
+        }, {})
+        setNetworks(networksMap)
+      }
+    } catch (error) {
+      console.error('Failed to fetch networks:', error)
+    }
+  }
 
   const handleDelete = async (storeId: string) => {
     if (!confirm("Are you sure you want to delete this store?")) return
@@ -132,9 +157,9 @@ export default function StoresList() {
                   <TableHead>Store Name</TableHead>
                   <TableHead>Network</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead>Network</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Store Link</TableHead>
+                  <TableHead>Website URL</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -157,7 +182,9 @@ export default function StoresList() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{store.network}</Badge>
+                      <Badge variant="outline">
+                        {networks[store.network]?.name || store.network}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="space-y-1">
@@ -165,30 +192,41 @@ export default function StoresList() {
                         <div className="text-xs text-muted-foreground">{store.subCategory?.name}</div>
                       </div>
                     </TableCell>
-                    <TableCell>{store.network}</TableCell>
                     <TableCell>
                       <Badge variant={store.status === "enable" ? "default" : "secondary"}>
                         {store.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="max-w-[200px] truncate">
+                    <TableCell className="max-w-[200px]">
+                      {store.slug ? (
+                        <a
+                          href={`${store.websiteUrl}?${store.slug}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline flex items-center gap-1 text-sm truncate"
+                          onClick={(e) => e.stopPropagation()}
+                          title={`/store/${store.slug}`}
+                        >
+                         
+                          <ExternalLink className="h-6 w-6 ml-1 flex-shrink-0" />
+                        </a>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No slug</span>
+                      )}
+                    </TableCell>
+                     <TableCell className="max-w-[200px]">
                       <div className="flex flex-col gap-1">
-                        {/* {store.slug ? (
-                          <span className="text-sm font-medium">/{store.slug}</span>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">No slug found</span>
-                        )} */}
                         {store.websiteUrl ? (
                           <a
-                            href={`${store.websiteUrl}?${store.slug}`}
+                            href={store.websiteUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline flex items-center gap-1 text-xs"
+                            className="text-blue-600 hover:underline flex items-center gap-1 text-sm truncate"
                             onClick={(e) => e.stopPropagation()}
+                            title={store.websiteUrl}
                           >
-                            {/* {store.websiteUrl}/{store.slug} */}
-                           
-                            <ExternalLink className="h-6 w-6 ml-1" />
+                            {store.websiteUrl.replace(/^https?:\/\//, '')}
+                            <ExternalLink className="h-3 w-3 ml-1 flex-shrink-0" />
                           </a>
                         ) : (
                           <span className="text-xs text-muted-foreground">No website URL</span>
