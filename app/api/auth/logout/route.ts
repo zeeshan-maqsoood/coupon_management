@@ -69,14 +69,6 @@ export async function POST(request: Request) {
     console.log('Cleared all auth cookies');
     
     return response;
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'none' : 'lax',
-      path: '/api/auth/refresh',
-      expires: new Date(0),
-    });
-
-    return response;
   } catch (error) {
     console.error('Logout error:', error);
     return createErrorResponse('Failed to process logout');
