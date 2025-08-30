@@ -34,6 +34,7 @@ export async function GET(request: Request) {
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
+    console.log('Fetching dashboard stats...');
     // Use a single aggregation pipeline to get all stats in one query
     const [stats] = await Store.aggregate([
       {

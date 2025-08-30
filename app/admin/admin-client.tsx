@@ -11,6 +11,7 @@ export default function AdminClient({ children }: { children: ReactNode }) {
   const searchParams = useSearchParams();
   const { user, loading, isAuthenticated } = useAuth();
   const [isChecking, setIsChecking] = useState(true);
+  const [initialCheckDone, setInitialCheckDone] = useState(false);
 
   useEffect(() => {
     // Only run on client side
@@ -19,36 +20,49 @@ export default function AdminClient({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Skip if still loading auth context
-    if (loading) return;
+    // Check for token in localStorage
+    const token = localStorage.getItem('token');
+    console.log('AdminClient - Token check:', { 
+      hasToken: !!token,
+      loading,
+      hasUser: !!user,
+      userRole: user?.role
+    });
 
-    // If we have a user with admin role, we're good to go
+    // If we have a token but still loading, wait
+    if (loading) {
+      console.log('AdminClient - Auth context still loading...');
+      return;
+    }
+
+    // If we have an admin user, allow access
     if (user?.role === 'admin') {
+      console.log('AdminClient - Admin access granted');
       setIsChecking(false);
       return;
     }
-    
-    // If no user but we have a token, wait for auth context to update
-    const token = localStorage.getItem('auth-token');
-    if (token) {
+
+    // If we have a token but no user yet, wait a bit for auth context to update
+    if (token && !user) {
+      console.log('AdminClient - Token exists but no user yet, waiting...');
       const timer = setTimeout(() => {
-        // If we still don't have a user after waiting, redirect to login
-        if (!isAuthenticated) {
-          const from = pathname === '/login' ? searchParams?.get('from') || '/admin' : pathname;
-          router.replace(`/login?from=${encodeURIComponent(from || '/admin')}`);
+        console.log('AdminClient - Auth check completed');
+        if (!user) {
+          console.log('AdminClient - Still no user, redirecting to login');
+          router.replace('/login');
         }
-        setIsChecking(false);
       }, 1000);
-      
       return () => clearTimeout(timer);
     }
+
+    // No token and no user, redirect to login
+    if (!token) {
+      console.log('AdminClient - No token, redirecting to login');
+      router.replace('/login');
+    }
     
-    // No user and no token, redirect to login
-    const from = pathname === '/login' ? searchParams?.get('from') || '/admin' : pathname;
-    router.replace(`/login?from=${encodeURIComponent(from || '/admin')}`);
     setIsChecking(false);
-    
-  }, [user, loading, isAuthenticated, router, pathname, searchParams]);
+  }, [user, loading, router]);
 
   // Show loading state while checking auth
   if (isChecking || loading) {

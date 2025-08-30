@@ -173,20 +173,59 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}) {
     throw new Error('No authentication token found');
   }
 
+  // Create new headers object to avoid mutating the original
   const headers = new Headers(options.headers || {});
-  headers.set('Authorization', `Bearer ${token}`);
-  headers.set('Content-Type', 'application/json');
-
-  const response = await fetch(url, {
-    ...options,
-    headers,
-    credentials: 'include',
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.message || 'Request failed');
+  
+  // Ensure we have a valid token before setting the header
+  if (token) {
+    console.log('Using token for request to:', url);
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  
+  // Ensure content type is set for non-GET requests
+  if (options.method && options.method !== 'GET') {
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
   }
 
-  return response.json();
+  try {
+    console.log('Making request to:', url, {
+      method: options.method || 'GET',
+      headers: Object.fromEntries(headers.entries())
+    });
+    
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      // If unauthorized, clear the invalid token
+      if (response.status === 401) {
+        console.error('Token invalid or expired, clearing auth data');
+        localStorage.removeItem('token');
+        document.cookie = 'auth-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          window.location.href = '/login';
+        }
+      }
+      
+      const errorData = await response.json().catch(() => ({}));
+      console.error('API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        url,
+        error: errorData
+      });
+      
+      throw new Error(errorData.message || `Request failed with status ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Fetch error:', error);
+    throw error;
+  }
 }

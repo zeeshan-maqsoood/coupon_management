@@ -83,15 +83,19 @@ export default function AdminDashboard() {
         setLoading(true);
       }
       
+      console.log('Fetching dashboard stats...');
       const response = await fetchWithAuth('/api/dashboard/stats', {
         cache: 'no-store',
       });
+      
+      console.log('Dashboard stats response:', response);
       
       if (!response) {
         throw new Error('No response from server');
       }
 
       const responseData = response.data || response;
+      console.log('Dashboard stats data:', responseData);
       
       setStats(prevStats => ({
         ...prevStats,
@@ -121,9 +125,11 @@ export default function AdminDashboard() {
       
       setLastUpdated(new Date());
       setError(null);
-    } catch (err) {
-      console.error("Failed to fetch stats:", err);
-      setError('Failed to load dashboard data. Please try again.');
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load dashboard data';
+      console.error('Error details:', { error });
+      setError(errorMessage);
     } finally {
       setLoading(false);
       setIsRefreshing(false);

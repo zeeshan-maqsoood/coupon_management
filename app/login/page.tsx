@@ -65,51 +65,28 @@ export default function LoginPage() {
       
       console.log('Attempting login with:', formData);
       
-      try {
-        const response = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: formData.email,
-            password: formData.password
-          }),
-        });
-
-        const data = await response.json();
-        console.log('Login response:', data);
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Login failed');
-        }
-
-        if (data.success && data.data?.token) {
-          // Store the token
-          localStorage.setItem('token', data.data.token);
-          // Update auth context with credentials
-          await login({ email: formData.email, password: formData.password });
-        } else {
-          throw new Error('Invalid response from server');
-        }
-      } catch (err) {
-        const error = err as Error;
-        console.error('Login error:', error);
-        setError(error.message || 'Login failed. Please try again.');
-      }
+      // Use the login function from auth context
+      const success = await login({ 
+        email: formData.email, 
+        password: formData.password 
+      });
       
-    } catch (error) {
+      if (!success) {
+        throw new Error('Login failed. Please check your credentials.');
+      }
+    } catch (err) {
+      const error = err as Error;
       console.error('Login error:', error);
-      setError('An error occurred. Please try again.');
+      setError(error.message || 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev: { email: string; password: string }) => ({
       ...prev,
-      [name]: value,
+      [name]: value
     }));
   };
 
@@ -141,19 +118,19 @@ export default function LoginPage() {
         <form className="mt-4 space-y-6" onSubmit={handleSubmit}>
           <div className="-space-y-px rounded-md shadow-sm">
             <div>
-              <Label htmlFor="email-address" className="sr-only">
+              <Label htmlFor="email" className="sr-only">
                 Email address
               </Label>
               <Input
-                id="email-address"
+                id="email"
                 name="email"
                 type="email"
                 autoComplete="email"
                 required
-                className="relative block w-full rounded-t-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                placeholder="Email address"
                 value={formData.email}
-                onChange={handleChange}
+                onChange={handleInputChange}
+                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                placeholder="Email address"
                 disabled={isLoading}
               />
             </div>
@@ -167,10 +144,10 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 required
-                className="relative block w-full rounded-b-md border-0 py-2 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                placeholder="Password"
                 value={formData.password}
-                onChange={handleChange}
+                onChange={handleInputChange}
+                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                placeholder="Password"
                 disabled={isLoading}
               />
             </div>

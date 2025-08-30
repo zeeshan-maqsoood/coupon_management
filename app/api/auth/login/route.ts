@@ -103,7 +103,7 @@ export async function POST(request: Request) {
 
     // Create a clean user object without the password
     const userData = {
-      id: adminUser._id.toString(),
+      id: adminUser._id.toString(),  // Use 'id' to match JWT payload interface
       email: adminUser.email,
       username: adminUser.username,
       role: adminUser.role,
@@ -118,8 +118,13 @@ export async function POST(request: Request) {
     
     console.log('Generated user data for token:', userData);
 
-    // Generate JWT token
-    const token = sign(userData, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+    // Generate JWT token with the correct payload structure
+    const token = sign(userData, JWT_SECRET, { 
+      expiresIn: TOKEN_EXPIRY,
+      algorithm: 'HS256'  // Explicitly set the algorithm
+    });
+    
+    console.log('Generated token:', token);
 
     // Create response with user data and token
     const responseData = {
@@ -127,7 +132,7 @@ export async function POST(request: Request) {
       data: {
         token,
         user: {
-          id: userData.id,
+          id: userData.userId,  // Use userData.userId to match the token payload
           email: userData.email,
           username: userData.username,
           role: userData.role,
@@ -136,26 +141,33 @@ export async function POST(request: Request) {
       }
     };
 
-    // Create response
-    const response = new NextResponse(JSON.stringify(responseData), {
+    // Create response with HTTP-only cookie
+    const isProduction = process.env.NODE_ENV === 'production';
+    const response = new NextResponse(JSON.stringify({
+      ...responseData,
+      data: {
+        ...responseData.data,
+        token: token // Include token in response for localStorage
+      }
+    }), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
       },
     });
 
-    // Set HTTP-only cookie with the token
+    // Set secure, HTTP-only cookie with the token
     response.cookies.set({
       name: 'auth-token',
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
       path: '/',
-      maxAge: 60 * 60, // 1 hour
+      maxAge: 60 * 60 * 24 * 7, // 1 week
     });
 
-    console.log('Login successful, token set in cookie');
+    console.log('Login successful, token set in cookie and response');
 
     return response;
   } catch (error) {
